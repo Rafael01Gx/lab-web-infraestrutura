@@ -1,0 +1,130 @@
+services:
+  # MySQL Database
+  db:
+    image: mysql:8.0
+    container_name: mysql-nest-lab
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: nestlab
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+    volumes:
+      - mysql_lab_data:/var/lib/mysql
+    # - ./mysql/conf.d:/etc/mysql/conf.d:ro  
+    ports:
+      - "3306:3307"
+    networks:
+      - laboratorio-network
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+   # MySQL Backup Automático
+  backup:
+    image: fradelg/mysql-cron-backup:latest
+    container_name: mysql-backup-lab
+    restart: unless-stopped
+    environment:
+      - MYSQL_HOST=db
+      - MYSQL_PORT=3306
+      - MYSQL_USER=root
+      - MYSQL_PASS=root
+      - MYSQL_DATABASE=nestlab
+      - CRON_TIME=0 2 * * *        # Backup diário às 2h da manhã
+      - MAX_BACKUPS=7              # Máx backups dos últimos 7 dias
+      - INIT_BACKUP=1              # Faz backup imediatamente ao iniciar
+      - GZIP_LEVEL=9               # Compressão máxima
+      - TIMEOUT=10m                # Timeout de 10 minutos
+    volumes:
+      - ./backups:/backup          # Salva backups na pasta local ./backups
+    networks:
+      - laboratorio-network
+    depends_on:
+      db:
+        condition: service_healthy
+
+
+  # NestJS API
+  api:
+    container_name: nest-lab-api
+    image: xrafaelgx/nest-lab-api:developer
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=${PORT}
+      - CORS_ORIGINS=${CORS_ORIGINS}
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_TOKEN_ISSUER=${JWT_TOKEN_ISSUER}
+      - JWT_TTL=${JWT_TTL}
+      - MAIL_HOST=${MAIL_HOST}
+      - MAIL_PORT=${MAIL_PORT}
+      - MAIL_USER=${MAIL_USER}
+      - MAIL_PASS=${MAIL_PASS}
+      - MAIL_FROM=${MAIL_FROM}
+    networks:
+      - laboratorio-network
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => {process.exit(r.statusCode === 401 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Angular SSR Frontend
+  frontend:
+    container_name: angular-lab-web
+    image: xrafaelgx/angular-lab-web:latest
+    restart: unless-stopped
+    networks:
+      - laboratorio-network
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4000', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: nginx-lab
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+      - ./nginx/logs:/var/log/nginx
+    depends_on:
+      api:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    networks:
+      - laboratorio-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  mysql_lab_data:
+    driver: local
+
+networks:
+  laboratorio-network:
+    driver: bridge
