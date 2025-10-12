@@ -48,6 +48,24 @@ services:
       db:
         condition: service_healthy
 
+  # PhpMyAdmin
+  phpmyadmin:
+    image: phpmyadmin:5.2.1-apache
+    container_name: phpmyadmin-nest-lab
+    restart: unless-stopped
+    environment:
+      PMA_HOST: db
+      PMA_PORT: 3306
+      PMA_USER: user
+      PMA_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "8844:80"
+    networks:
+      - laboratorio-network
+    depends_on:
+      - db
+
 
   # NestJS API
   api:
