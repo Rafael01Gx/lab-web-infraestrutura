@@ -70,7 +70,7 @@ services:
   # NestJS API
   api:
     container_name: nest-lab-api
-    image: xrafaelgx/nest-lab-api:developer
+    image: xrafaelgx/nest-lab-api:latest
     restart: unless-stopped
     environment:
       - NODE_ENV=production
