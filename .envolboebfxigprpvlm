@@ -1,0 +1,13 @@
+NODE_ENV=production
+PORT=3000
+CORS_ORIGINS=http://18.230.6.22,http://localhost:4000,http://127.0.0.1:4000
+DATABASE_URL=mysql://user:password@db:3306/nestlab
+JWT_SECRET=d14143186c8c1d6923a8471003fff5fa1906b3d6a8eb8bdfbe906e7b1b9450d65fc23b9cb57cbe61d869ccce7e436896a09c3e1d51fbf6b26999c4a803f748a9
+JWT_TOKEN_AUDIENCE=http://localhost:3000
+JWT_TOKEN_ISSUER=http://localhost:3000
+JWT_TTL=1d
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=465
+MAIL_USER=rafaeljunio.sm@gmail.com
+MAIL_PASS=olboebfxigprpvlm
+MAIL_FROM=rafaeljunio.sm@gmail.com

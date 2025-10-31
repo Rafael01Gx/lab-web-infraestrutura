@@ -13,7 +13,7 @@ services:
       - mysql_lab_data:/var/lib/mysql
     # - ./mysql/conf.d:/etc/mysql/conf.d:ro  
     ports:
-      - "3306:3307"
+      - "3306:3306"
     networks:
       - laboratorio-network
     command: --default-authentication-plugin=mysql_native_password
@@ -48,31 +48,13 @@ services:
       db:
         condition: service_healthy
 
-  # PhpMyAdmin
-  phpmyadmin:
-    image: phpmyadmin:5.2.1-apache
-    container_name: phpmyadmin-nest-lab
-    restart: unless-stopped
-    environment:
-      PMA_HOST: db
-      PMA_PORT: 3306
-      PMA_USER: user
-      PMA_PASSWORD: password
-      MYSQL_ROOT_PASSWORD: root
-    ports:
-      - "8844:80"
-    networks:
-      - laboratorio-network
-    depends_on:
-      - db
-
-
   # NestJS API
   api:
     container_name: nest-lab-api
-    image: xrafaelgx/nest-lab-api:developer
+    image: xrafaelgx/nest-lab-api:latest
     restart: unless-stopped
     environment:
+      - TZ=UTC
       - NODE_ENV=production
       - PORT=${PORT}
       - CORS_ORIGINS=${CORS_ORIGINS}
