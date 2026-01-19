@@ -2,7 +2,7 @@
 
 set -e
 
-BACKUP_DIR="/backups/mysql"
+BACKUP_DIR="../backups"
 CONTAINER_NAME="mysql-nest-lab"
 DATABASE_NAME="nestlab"
 MYSQL_USER="root"
@@ -11,7 +11,7 @@ MYSQL_PASSWORD="root"
 # Verificar se foi passado um arquivo de backup
 if [ -z "$1" ]; then
     echo "📋 Backups disponíveis:"
-    ls -lh "$BACKUP_DIR"/backup_*.sql.gz
+    ls -lh "$BACKUP_DIR"/*.nestlab.sql.gz
     echo ""
     echo "Uso: ./restore-db.sh <arquivo_de_backup>"
     echo "Exemplo: ./restore-db.sh backup_nestlab_20250112_143022.sql.gz"

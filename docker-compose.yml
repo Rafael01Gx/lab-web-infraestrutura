@@ -1,79 +1,134 @@
+version: "3.8"
+
 services:
-  # MySQL Database
+  # ============================================
+  # TRAEFIK - Reverse Proxy
+  # ============================================
+  traefik:
+    image: traefik:v2.11
+    container_name: traefik
+    restart: unless-stopped
+    
+    # Garantir que rode como root com GID do docker (1001)
+    user: "0:1001"
+    
+    command:
+      # API e Dashboard
+      - "--api.dashboard=true"
+      - "--api.insecure=true"
+      
+      # Logs
+      - "--log.level=DEBUG"
+      - "--accesslog=true"
+      
+      # Providers
+      - "--providers.docker=true"
+      - "--providers.docker.endpoint=unix:///var/run/docker.sock"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=laboratorio-network"
+      - "--providers.docker.watch=true"
+      
+      # Entrypoints
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      
+      # Certificados SSL
+      #- "--certificatesresolvers.letsencrypt.acme.email=rafael_junio_moraes@hotmail.com"
+      #- "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      #- "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
+      #- "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+      
+      # Ping
+      - "--ping=true"
+      - "--ping.entrypoint=web"
+    
+    ports:
+      - "127.0.0.1:80:80"
+      - "127.0.0.1:443:443"
+      - "127.0.0.1:8080:8080"
+    
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      - traefik-certificates:/letsencrypt
+    
+    networks:
+      - laboratorio-network
+    
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.rflgx.com.br`)"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.entrypoints=web"
+
+  # ============================================
+  # MYSQL Database
+  # ============================================
   db:
     image: mysql:8.0
     container_name: mysql-nest-lab
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: nestlab
-      MYSQL_USER: user
-      MYSQL_PASSWORD: password
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
     volumes:
       - mysql_lab_data:/var/lib/mysql
-    # - ./mysql/conf.d:/etc/mysql/conf.d:ro  
     ports:
-      - "3306:3307"
+      - "127.0.0.1:3306:3306"
     networks:
       - laboratorio-network
     command: --default-authentication-plugin=mysql_native_password
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root}"]
+      test:
+        ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
 
-   # MySQL Backup Automático
+  # ============================================
+  # MySQL Backup
+  # ============================================
   backup:
     image: fradelg/mysql-cron-backup:latest
     container_name: mysql-backup-lab
     restart: unless-stopped
     environment:
       - MYSQL_HOST=db
-      - MYSQL_PORT=3306
+      - MYSQL_PORT=${MYSQL_PORT}
       - MYSQL_USER=root
-      - MYSQL_PASS=root
-      - MYSQL_DATABASE=nestlab
-      - CRON_TIME=0 2 * * *        # Backup diário às 2h da manhã
-      - MAX_BACKUPS=7              # Máx backups dos últimos 7 dias
-      - INIT_BACKUP=1              # Faz backup imediatamente ao iniciar
-      - GZIP_LEVEL=9               # Compressão máxima
-      - TIMEOUT=10m                # Timeout de 10 minutos
+      - MYSQL_PASS=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - CRON_TIME=0 2 * * *
+      - MAX_BACKUPS=10
+      - INIT_BACKUP=1
+      - GZIP_LEVEL=9
+      - TIMEOUT=10m
     volumes:
-      - ./backups:/backup          # Salva backups na pasta local ./backups
+      - ./backups:/backup
     networks:
       - laboratorio-network
     depends_on:
       db:
         condition: service_healthy
 
-  # PhpMyAdmin
-  phpmyadmin:
-    image: phpmyadmin:5.2.1-apache
-    container_name: phpmyadmin-nest-lab
-    restart: unless-stopped
-    environment:
-      PMA_HOST: db
-      PMA_PORT: 3306
-      PMA_USER: user
-      PMA_PASSWORD: password
-      MYSQL_ROOT_PASSWORD: root
-    ports:
-      - "8844:80"
-    networks:
-      - laboratorio-network
-    depends_on:
-      - db
-
-
+  # ============================================
   # NestJS API
+  # ============================================
   api:
     container_name: nest-lab-api
     image: xrafaelgx/nest-lab-api:latest
     restart: unless-stopped
     environment:
-      - NODE_ENV=production
+      - TZ=UTC
+      - NODE_ENV=${XNODE_ENV}
       - PORT=${PORT}
       - CORS_ORIGINS=${CORS_ORIGINS}
       - DATABASE_URL=${DATABASE_URL}
@@ -91,14 +146,41 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
+    labels:
+      - "traefik.enable=true"
+
+      # Rota para /api/*
+      - "traefik.http.routers.api.rule=Host(`rflgx.com.br`) && (PathPrefix(`/api`) || PathPrefix(`/socket.io`))"
+      - "traefik.http.routers.api.entrypoints=web"
+      - "traefik.http.services.api.loadbalancer.server.port=3000"
+
+      # Middleware rm /api path
+      - "traefik.http.middlewares.api-stripprefix.stripprefix.prefixes=/api"
+      - "traefik.http.routers.api.middlewares=api-stripprefix"
+      
+      
+
+      # WebSocket sup
+      - "traefik.http.services.api.loadbalancer.sticky.cookie=true"
+      - "traefik.http.services.api.loadbalancer.sticky.cookie.name=api_sticky"
+
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => {process.exit(r.statusCode === 401 ? 0 : 1)})"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:3000', (r) => {process.exit(r.statusCode === 401 ? 0 : 1)})",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
 
+  # ============================================
   # Angular SSR Frontend
+  # ============================================
   frontend:
     container_name: angular-lab-web
     image: xrafaelgx/angular-lab-web:latest
@@ -108,40 +190,55 @@ services:
     depends_on:
       api:
         condition: service_healthy
+
+    labels:
+      - "traefik.enable=true"
+      
+      - "traefik.http.routers.frontend.rule=Host(`rflgx.com.br`)"
+
+
+      # Rota padrão
+      - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.frontend.entrypoints=web"
+      - "traefik.http.routers.frontend.priority=1" # prioridade
+      - "traefik.http.services.frontend.loadbalancer.server.port=4000"
+
+      # Middleware compress
+      - "traefik.http.middlewares.frontend-compress.compress=true"
+      - "traefik.http.routers.frontend.middlewares=frontend-compress"
+
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4000', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:4000', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
 
-  # Nginx Reverse Proxy
-  nginx:
-    image: nginx:1.25-alpine
-    container_name: nginx-lab
+  # ============================================
+  # Cloudflare Tunnel
+  # ============================================
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared-tunnel
     restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      - ./nginx/certs:/etc/nginx/certs:ro
-      - ./nginx/logs:/var/log/nginx
-    depends_on:
-      api:
-        condition: service_healthy
-      frontend:
-        condition: service_healthy
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
     networks:
       - laboratorio-network
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+    depends_on:
+      - traefik
 
 volumes:
   mysql_lab_data:
+    driver: local
+  traefik-certificates:
     driver: local
 
 networks:
