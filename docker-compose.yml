@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   # ============================================
   # TRAEFIK - Reverse Proxy
@@ -43,9 +41,7 @@ services:
       - "--ping.entrypoint=web"
     
     ports:
-      - "127.0.0.1:80:80"
-      - "127.0.0.1:443:443"
-      - "127.0.0.1:8080:8080"
+      - "80:80"
     
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:rw
@@ -92,6 +88,21 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+
+
+  adminer:
+    image: adminer:latest
+    container_name: adminer-lab
+    restart: unless-stopped
+    networks:
+      - laboratorio-network
+    depends_on:
+      - db
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.adminer.rule=Host(`mysql.rflgx.com.br`)"
+      - "traefik.http.routers.adminer.entrypoints=web"
+      - "traefik.http.services.adminer.loadbalancer.server.port=8080"
 
   # ============================================
   # MySQL Backup
@@ -151,7 +162,7 @@ services:
       - "traefik.enable=true"
 
       # Rota para /api/*
-      - "traefik.http.routers.api.rule=Host(`rflgx.com.br`) && (PathPrefix(`/api`) || PathPrefix(`/socket.io`))"
+      - "traefik.http.routers.api.rule=Host(`web.rflgx.com.br`) && (PathPrefix(`/api`) || PathPrefix(`/socket.io`))"
       - "traefik.http.routers.api.entrypoints=web"
       - "traefik.http.services.api.loadbalancer.server.port=3000"
 
@@ -194,7 +205,7 @@ services:
     labels:
       - "traefik.enable=true"
       
-      - "traefik.http.routers.frontend.rule=Host(`rflgx.com.br`)"
+      - "traefik.http.routers.frontend.rule=Host(`web.rflgx.com.br`)"
 
 
       # Rota padrão
@@ -220,20 +231,6 @@ services:
       retries: 3
       start_period: 40s
 
-  # ============================================
-  # Cloudflare Tunnel
-  # ============================================
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: cloudflared-tunnel
-    restart: unless-stopped
-    command: tunnel --no-autoupdate run
-    environment:
-      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
-    networks:
-      - laboratorio-network
-    depends_on:
-      - traefik
 
 volumes:
   mysql_lab_data:
